@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Vision Studio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        /* --- DEFAULT LIGHT THEME --- */
+        :root {
+            --primary: #4f46e5; --primary-hover: #4338ca;
+            --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b;
+            --border: #e2e8f0; --user-bubble: #4f46e5; --ai-bubble: #f1f5f9;
+            --input-bg: #ffffff; --chat-bg: #f8fafc; --upload-bg: #f8fafc;
+        }
+
+        /* --- AUTOMATIC SYSTEM DARK THEME --- */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #6366f1; --primary-hover: #818cf8;
+                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+                --card-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8;
+                --border: #334155; --user-bubble: #6366f1; --ai-bubble: #0f172a;
+                --input-bg: #0f172a; --chat-bg: #0f172a; --upload-bg: #0f172a;
+            }
+            .export-btn:disabled { background-color: #064e3b !important; color: #6ee7b7 !important; opacity: 0.5;}
+            .clear-data-btn { background: #334155; } .clear-data-btn:hover { background: #475569; }
+        }
+
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-gradient); color: var(--text-main); margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        
+        /* NEW: Login Overlay Styling */
+        #loginOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--bg-gradient); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+        .login-card { background: var(--card-bg); padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid var(--border); text-align: center; max-width: 400px; width: 90%; }
+        .login-card h2 { margin-top: 0; color: var(--primary); font-size: 1.8rem; }
+        .login-card p { color: var(--text-muted); margin-bottom: 30px; line-height: 1.5; }
+        #appContainer { display: none; flex-direction: column; height: 100vh; }
+
+        header { background-color: var(--card-bg); padding: 16px 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        header h1 { margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--text-main); }
+        .header-controls { display: flex; gap: 10px; align-items: center; }
+        .user-greeting { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); }
+        .clear-data-btn { background: #e2e8f0; color: var(--text-main); border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: 0.2s; }
+        .clear-data-btn:hover { background: #cbd5e1; }
+        .logout-btn { background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: 0.2s; }
+        .logout-btn:hover { background: #dc2626; }
+
+        .workspace { display: flex; flex: 1; width: 100%; max-width: 1600px; margin: 0 auto; padding: 24px; gap: 20px; box-sizing: border-box; overflow: hidden; }
+
+        .sidebar { width: 260px; background-color: var(--card-bg); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; border: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }
+        .new-chat-btn { background-color: var(--primary); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: 600; cursor: pointer; margin-bottom: 20px; width: 100%; transition: 0.2s; flex-shrink: 0;}
+        .new-chat-btn:hover { background-color: var(--primary-hover); }
+        .history-label { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; flex-shrink: 0;}
+        .session-item { padding: 12px; border-radius: 10px; cursor: pointer; margin-bottom: 8px; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; justify-content: space-between; align-items: center;}
+        .session-item.active { background-color: var(--ai-bubble); color: var(--primary); font-weight: 600; border: 1px solid var(--border); }
+        .delete-session-btn { background: none; border: none; color: #ef4444; cursor: pointer; font-weight: bold; font-size: 1.1rem; padding: 0 5px; opacity: 0.5; transition: 0.2s;}
+        .delete-session-btn:hover { opacity: 1; transform: scale(1.2); }
+
+        .panel { background-color: var(--card-bg); border-radius: 20px; padding: 28px; display: flex; flex-direction: column; border: 1px solid var(--border); }
+        .left-panel { flex: 1; overflow: hidden; } 
+        .right-panel { flex: 1.2; overflow: hidden; }
+        .panel-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 20px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;}
+
+        .upload-section { border: 2px dashed var(--border); background-color: var(--upload-bg); padding: 20px; text-align: center; border-radius: 12px; margin-bottom: 20px; cursor: pointer; transition: 0.3s ease; flex-shrink: 0;}
+        .upload-section:hover { border-color: var(--primary); background-color: var(--ai-bubble); }
+        .upload-section p { margin: 0; color: var(--text-muted); font-weight: 600; transition: 0.3s ease; }
+        .upload-section.minimized { padding: 8px; margin-bottom: 8px; border-width: 1px; }
+        .upload-section.minimized p { font-size: 0.8rem; }
+
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 10px; flex: 1; overflow-y: auto; align-content: start; padding-right: 5px; min-height: 120px; transition: 0.3s ease; }
+        .image-grid.minimized { flex: none; height: 60px; min-height: 60px; grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); margin-bottom: 10px; overflow: hidden; }
+        
+        .img-wrapper { position: relative; width: 100%; aspect-ratio: 1 / 1; height: auto; transition: 0.3s ease; }
+        .img-wrapper img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .remove-img-btn { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s; z-index: 5;}
+        .remove-img-btn:hover { background: #dc2626; transform: scale(1.1); }
+
+        button.action-btn { padding: 14px; background-color: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; width: 100%; transition: 0.2s; flex-shrink: 0; margin-top: 15px;}
+        button.action-btn:disabled { background-color: var(--border); color: var(--text-muted); cursor: not-allowed; }
+
+        #initialCaption { flex-shrink: 0; overflow-y: auto; max-height: 35%; margin-top: 15px; padding-right: 5px; border-top: 1px solid var(--border); padding-top: 15px; transition: 0.3s ease; color: var(--text-main); }
+        #initialCaption.expanded { flex: 1; max-height: 100%; border-top: none; margin-top: 5px; padding-top: 5px; } 
+
+        #chatBox { flex: 1; overflow-y: auto; border-radius: 16px; padding: 20px; margin-bottom: 20px; background-color: var(--chat-bg); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 16px; }
+        
+        .message { padding: 12px 18px; border-radius: 16px; max-width: 85%; font-size: 0.95rem; line-height: 1.5; flex-shrink: 0; }
+        .user-msg { background-color: var(--user-bubble); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .ai-msg { background-color: var(--ai-bubble); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); overflow-x: auto; color: var(--text-main);}
+        .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
+
+        .input-group { display: flex; gap: 10px; background: var(--card-bg); padding: 6px; border-radius: 16px; border: 1px solid var(--border); flex-shrink: 0; align-items: flex-end;}
+        textarea { flex: 1; padding: 12px 16px; border: none; outline: none; font-size: 1rem; font-family: inherit; resize: none; min-height: 20px; max-height: 150px; overflow-y: auto; border-radius: 10px; line-height: 1.4; box-sizing: border-box; background: var(--input-bg); color: var(--text-main); }
+        .input-group button.chat-btn { padding: 12px 24px; height: 44px; background: var(--primary); color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; flex-shrink: 0;}
+        .input-group button.chat-btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+
+        .export-btn { padding: 12px 20px; height: 44px; background-color: #10b981; color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.95rem; white-space: nowrap; flex-shrink: 0; }
+        .export-btn:hover:not(:disabled) { background-color: #059669; }
+        .export-btn:disabled { background-color: #d1fae5; color: #047857; cursor: not-allowed; opacity: 0.7; }
+
+        .loader { display: none; margin: 15px auto; border: 3px solid var(--border); border-top: 3px solid var(--primary); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; flex-shrink: 0;}
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        
+        /* --- UPGRADED MOBILE RESPONSIVENESS --- */
+        @media (max-width: 950px) { 
+            .workspace { flex-direction: column; overflow-y: auto; padding: 12px; gap: 12px; } 
+            .sidebar { width: 100%; max-height: 250px; } 
+            .panel { min-height: 450px; flex: none; padding: 16px; } 
+            
+            /* Fix Header Stacking */
+            header { flex-direction: column; padding: 16px; gap: 12px; text-align: center; }
+            .header-controls { flex-wrap: wrap; justify-content: center; width: 100%; gap: 8px; }
+            .user-greeting { width: 100%; font-size: 0.85rem; margin-bottom: 4px; }
+            
+            /* Fix Chat Input Squish */
+            .input-group { flex-wrap: wrap; padding: 12px; }
+            textarea { flex: 1 1 100%; min-width: 100%; margin-bottom: 8px; }
+            .input-group button.chat-btn { flex: 2; width: auto; }
+            .export-btn { flex: 1; width: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loginOverlay">
+    <div class="login-card">
+        <h2>✦ Gemini Vision Studio</h2>
+        <p>Sign in securely with your Google account to access your workspaces and diagnostic history.</p>
+        
+        <div id="g_id_onload"
+             data-client_id="663271415319-elet0admir3b109b7t2rhjf7750og17v.apps.googleusercontent.com"
+             data-context="signin"
+             data-ux_mode="popup"
+             data-callback="handleGoogleLogin"
+             data-auto_prompt="false">
+        </div>
+        <div class="g_id_signin"
+             data-type="standard"
+             data-shape="rectangular"
+             data-theme="outline"
+             data-text="signin_with"
+             data-size="large"
+             data-logo_alignment="left"
+             style="display: flex; justify-content: center;">
+        </div>
+    </div>
+</div>
+
+<div id="appContainer">
+    <header>
+        <h1>✦ Gemini Vision Studio</h1>
+        <div class="header-controls">
+            <span class="user-greeting" id="userGreeting"></span>
+            <button class="clear-data-btn" onclick="clearAllData()">Clear History</button>
+            <button class="logout-btn" onclick="logoutUser()">Sign Out</button>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <div class="sidebar">
+            <button id="newChatBtn" class="new-chat-btn">+ New Chat Session</button>
+            <div class="history-label">Previous Sessions</div>
+            <div id="sessionList"></div>
+        </div>
+
+        <div class="panel left-panel">
+            <div class="panel-header">📷 Image Analysis</div>
+            
+            <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
+            <div class="upload-section" id="uploadSection" onclick="document.getElementById('imageInput').click()">
+                <p>📁 Click to Add Images</p>
+            </div>
+            
+            <div class="image-grid" id="imageGrid"></div>
+            
+            <button id="analyzeBtn" class="action-btn" style="display:none;" disabled>Run Diagnostics</button>
+            <div class="loader" id="mainLoader"></div>
+            
+            <div id="initialCaption" style="display: none;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">COMBINED DIAGNOSTIC REPORT</div>
+                <div id="captionText" class="message ai-msg" style="width: 100%; max-width: 100%; border:none; padding:0; background:transparent;"></div>
+            </div>
+        </div>
+
+        <div class="panel right-panel">
+            <div class="panel-header">💬 Session Chat</div>
+            
+            <div id="chatBox"></div>
+            <div class="loader" id="chatLoader"></div>
+            
+            <div class="input-group">
+                <textarea id="chatInput" rows="1" placeholder="Ask about the analyzed images..." disabled></textarea>
+                <button id="sendBtn" class="chat-btn" disabled>Send</button>
+                <button id="exportPdfBtn" class="export-btn" disabled title="Download Professional PDF">📄 PDF</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentUser = null;
+    let appState = { activeSessionId: null, sessions: {} };
+    const STORAGE_KEY = 'gemini_vision_state';
+
+    // --- NEW: GOOGLE OAUTH LOGIC ---
+    
+    // 1. Check if user is already logged in on page load
+    window.onload = () => {
+        currentUser = localStorage.getItem('gemini_user_email');
+        if (currentUser) {
+            // Already logged in, hide overlay and load app
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'flex';
+            document.getElementById('userGreeting').textContent = currentUser;
+            loadState();
+        }
+        // If not logged in, the loginOverlay stays visible automatically!
+    };
+
+    // 2. This function fires magically when the Google button is clicked and succeeds
+    function handleGoogleLogin(response) {
+        // The 'response.credential' is a secure JSON Web Token (JWT). We decode it to get the email.
+        const responsePayload = decodeJwtResponse(response.credential);
+        
+        currentUser = responsePayload.email; // We use their Gmail as the ultimate unique ID!
+        localStorage.setItem('gemini_user_email', currentUser);
+        
+        // Hide login screen, show app
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
+        document.getElementById('userGreeting').textContent = currentUser;
+        
+        // Load their specific history from the database
+        loadState();
+    }
+
+    // 3. Helper function to decode the Google JWT Token
+    function decodeJwtResponse(token) {
+        var base64Url = token.split('.')[1];
+        var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(jsonPayload);
+    }
+
+    // 4. Logout Function
+    function logoutUser() {
+        currentUser = null;
+        localStorage.removeItem('gemini_user_email');
+        location.reload(); // Reloading the page will automatically bring the login screen back up
+    }
+
+
+    // --- DATABASE SYNC LOGIC ---
+    async function saveState() {
+        if (!currentUser) return;
+        try { localStorage.setItem(STORAGE_KEY + '_' + currentUser, JSON.stringify(appState)); } 
+        catch (e) { console.warn("Local storage full."); }
+        try {
+            await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: currentUser, state_data: appState })
+            });
+        } catch (error) { console.error("Failed to sync with server database", error); }
+    }
+
+    async function loadState() {
+        if (!currentUser) return;
+        try {
+            const response = await fetch(`/api/load/${currentUser}`);
+            if (!response.ok) throw new Error("Server returned an error");
+            const serverData = await response.json();
+            
+            if (serverData && serverData.sessions) { appState = serverData; } 
+            else { throw new Error("Invalid data format from server"); }
+            
+            if (Object.keys(appState.sessions).length === 0) { startNewSession(); } 
+            else {
+                renderSidebar();
+                if (appState.activeSessionId && appState.sessions[appState.activeSessionId]) { renderWorkspace(); } 
+                else { appState.activeSessionId = Object.keys(appState.sessions)[0]; renderWorkspace(); }
+            }
+        } catch (error) {
+            console.error("Server data failed, loading local cache...", error);
+            const saved = localStorage.getItem(STORAGE_KEY + '_' + currentUser);
+            if (saved) { 
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed && parsed.sessions) appState = parsed;
+                } catch(e) { console.error("Local cache corrupted."); }
+            }
+            if (Object.keys(appState.sessions).length === 0) { startNewSession(); } 
+            else { renderSidebar(); renderWorkspace(); }
+        }
+    }
+
+    async function clearAllData() {
+        if(confirm(`Delete all history for ${currentUser}? This cannot be undone.`)) {
+            localStorage.removeItem(STORAGE_KEY + '_' + currentUser);
+            try {
+                await fetch('/api/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUser, state_data: { activeSessionId: null, sessions: {} } })
+                });
+            } catch(e) { console.error("Error clearing DB", e); }
+            location.reload();
+        }
+    }
+
+    async function base64ToFile(base64Data, filename) {
+        const res = await fetch(base64Data);
+        const blob = await res.blob();
+        return new File([blob], filename, { type: blob.type });
+    }
+
+    const DOM = {
+        sessionList: document.getElementById('sessionList'), newChatBtn: document.getElementById('newChatBtn'),
+        imageInput: document.getElementById('imageInput'), imageGrid: document.getElementById('imageGrid'),
+        analyzeBtn: document.getElementById('analyzeBtn'), captionDiv: document.getElementById('initialCaption'),
+        captionText: document.getElementById('captionText'), chatBox: document.getElementById('chatBox'),
+        chatInput: document.getElementById('chatInput'), sendBtn: document.getElementById('sendBtn'),
+        mainLoader: document.getElementById('mainLoader'), chatLoader: document.getElementById('chatLoader'),
+        exportPdfBtn: document.getElementById('exportPdfBtn'), uploadSection: document.getElementById('uploadSection')
+    };
+
+    function startNewSession() {
+        const id = 'sess_' + Date.now();
+        if (!appState.sessions) appState.sessions = {}; 
+        appState.sessions[id] = { id: id, title: 'New Chat Session', images: [], combinedCaption: null, chatHistory: [] };
+        appState.activeSessionId = id;
+        saveState(); renderSidebar(); renderWorkspace();
+    }
+
+    function deleteSession(id, event) {
+        event.stopPropagation();
+        delete appState.sessions[id];
+        if (appState.activeSessionId === id) {
+            const remaining = Object.keys(appState.sessions);
+            appState.activeSessionId = remaining.length > 0 ? remaining[0] : null;
+            if (!appState.activeSessionId) startNewSession();
+        }
+        saveState(); renderSidebar(); renderWorkspace();
+    }
+
+    function removeImage(index) {
+        const session = appState.sessions[appState.activeSessionId];
+        session.images.splice(index, 1);
+        if(session.images.length === 0) session.combinedCaption = null;
+        saveState(); renderWorkspace();
+    }
+
+    function renderSidebar() {
+        DOM.sessionList.innerHTML = '';
+        Object.values(appState.sessions).reverse().forEach(session => {
+            const div = document.createElement('div');
+            div.className = `session-item ${session.id === appState.activeSessionId ? 'active' : ''}`;
+            const titleSpan = document.createElement('span'); titleSpan.textContent = session.title; titleSpan.style.overflow = "hidden"; titleSpan.style.textOverflow = "ellipsis";
+            const delBtn = document.createElement('button'); delBtn.className = 'delete-session-btn'; delBtn.innerHTML = '×'; delBtn.onclick = (e) => deleteSession(session.id, e);
+            div.appendChild(titleSpan); div.appendChild(delBtn);
+            div.onclick = () => { appState.activeSessionId = session.id; saveState(); renderSidebar(); renderWorkspace(); };
+            DOM.sessionList.appendChild(div);
+        });
+    }
+
+    function renderWorkspace() {
+        const session = appState.sessions[appState.activeSessionId];
+        
+        DOM.imageGrid.innerHTML = '';
+        session.images.forEach((imgObj, index) => {
+            const wrapper = document.createElement('div'); wrapper.className = 'img-wrapper';
+            const img = document.createElement('img'); img.src = imgObj.base64;
+            if (!session.combinedCaption) {
+                const removeBtn = document.createElement('button'); removeBtn.className = 'remove-img-btn'; removeBtn.innerHTML = '×'; removeBtn.onclick = () => removeImage(index);
+                wrapper.appendChild(removeBtn);
+            }
+            wrapper.appendChild(img); DOM.imageGrid.appendChild(wrapper);
+        });
+
+        if (session.images.length > 0) {
+            DOM.analyzeBtn.style.display = 'block';
+            if (session.combinedCaption) {
+                DOM.captionText.innerHTML = marked.parse(session.combinedCaption); 
+                DOM.captionDiv.style.display = 'block';
+                DOM.captionDiv.classList.add('expanded');
+                DOM.imageGrid.classList.add('minimized');
+                DOM.uploadSection.classList.add('minimized');
+
+                DOM.analyzeBtn.disabled = true; DOM.analyzeBtn.textContent = "Diagnostics Complete";
+                DOM.chatInput.disabled = false; DOM.sendBtn.disabled = false; DOM.exportPdfBtn.disabled = false;
+            } else {
+                DOM.captionDiv.style.display = 'none'; 
+                DOM.captionDiv.classList.remove('expanded');
+                DOM.imageGrid.classList.remove('minimized');
+                DOM.uploadSection.classList.remove('minimized');
+
+                DOM.analyzeBtn.disabled = false; 
+                DOM.analyzeBtn.textContent = session.images.length === 1 ? "Run Diagnostics" : `Run Diagnostics on ${session.images.length} Images`;
+                DOM.chatInput.disabled = true; DOM.sendBtn.disabled = true; DOM.exportPdfBtn.disabled = true;
+            }
+        } else {
+            DOM.analyzeBtn.style.display = 'none'; DOM.captionDiv.style.display = 'none';
+            DOM.captionDiv.classList.remove('expanded');
+            DOM.imageGrid.classList.remove('minimized');
+            DOM.uploadSection.classList.remove('minimized');
+            DOM.chatInput.disabled = true; DOM.sendBtn.disabled = true; DOM.exportPdfBtn.disabled = true;
+        }
+
+        DOM.chatBox.innerHTML = '';
+        if (session.chatHistory.length === 0) DOM.chatBox.innerHTML = `<div class="message ai-msg">Upload images to begin.</div>`;
+        else session.chatHistory.forEach(msg => {
+            const className = msg.role === 'user' ? 'user-msg' : 'ai-msg';
+            const formatted = msg.role === 'user' ? msg.content : marked.parse(msg.content);
+            DOM.chatBox.innerHTML += `<div class="message ${className}">${formatted}</div>`;
+        });
+        DOM.chatBox.scrollTop = DOM.chatBox.scrollHeight;
+    }
+
+    DOM.newChatBtn.onclick = startNewSession;
+
+    DOM.imageInput.addEventListener('change', function(event) {
+        const files = event.target.files;
+        if (files.length === 0) return;
+        const session = appState.sessions[appState.activeSessionId];
+        if (session.images.length === 0) { session.title = files[0].name.split('.')[0] + (files.length > 1 ? ` (+${files.length-1})` : ''); }
+        Array.from(files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = function(e) { session.images.push({ fileName: file.name, base64: e.target.result }); saveState(); renderWorkspace(); renderSidebar(); };
+            reader.readAsDataURL(file);
+        });
+    });
+
+    DOM.analyzeBtn.onclick = async () => {
+        const session = appState.sessions[appState.activeSessionId];
+        DOM.analyzeBtn.disabled = true; DOM.mainLoader.style.display = 'block';
+        const formData = new FormData();
+        for (const imgObj of session.images) {
+            const fileObj = await base64ToFile(imgObj.base64, imgObj.fileName); formData.append('files', fileObj);
+        }
+        try {
+            const response = await fetch('/api/upload-and-caption', { method: 'POST', body: formData });
+            const data = await response.json();
+            session.combinedCaption = data.caption;
+            session.chatHistory.push({ role: 'assistant', content: `*Diagnostics completed for all ${session.images.length} images. Ask me anything about the combined dataset.*` });
+            saveState(); renderWorkspace();
+        } catch (error) { alert('Error connecting to Server.'); DOM.analyzeBtn.disabled = false; } finally { DOM.mainLoader.style.display = 'none'; }
+    };
+
+    DOM.sendBtn.onclick = async () => {
+        const session = appState.sessions[appState.activeSessionId];
+        const message = DOM.chatInput.value.trim();
+        if (!message) return;
+        session.chatHistory.push({"role": "user", "content": message});
+        
+        DOM.chatInput.value = ''; 
+        DOM.chatInput.style.height = 'auto';
+        saveState(); renderWorkspace();
+        
+        DOM.sendBtn.disabled = true; DOM.chatInput.disabled = true; DOM.chatLoader.style.display = 'block';
+        const allImagesBase64 = session.images.map(img => img.base64);
+        try {
+            const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: message, images_base64: allImagesBase64, history: session.chatHistory }) });
+            const data = await response.json();
+            session.chatHistory.push({"role": "assistant", "content": data.reply}); saveState(); renderWorkspace();
+        } catch (error) {
+            session.chatHistory.push({"role": "assistant", "content": "**Connection error.**"}); saveState(); renderWorkspace();
+        } finally { DOM.chatLoader.style.display = 'none'; DOM.sendBtn.disabled = false; DOM.chatInput.disabled = false; DOM.chatInput.focus(); }
+    };
+
+    DOM.chatInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+    });
+
+    DOM.chatInput.addEventListener('keydown', (e) => { 
+        if (e.key === 'Enter' && !e.shiftKey) { 
+            e.preventDefault(); 
+            DOM.sendBtn.click(); 
+        } 
+    });
+
+    DOM.exportPdfBtn.onclick = async () => {
+        const session = appState.sessions[appState.activeSessionId];
+        if (!session.combinedCaption) return;
+
+        DOM.exportPdfBtn.disabled = true;
+        DOM.exportPdfBtn.textContent = "⏳...";
+
+        try {
+            const response = await fetch('/api/summarize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caption: session.combinedCaption, history: session.chatHistory })
+            });
+            const data = await response.json();
+            const aiSummary = data.summary;
+
+            const printDiv = document.createElement('div');
+            printDiv.style.backgroundColor = '#ffffff';
+            
+            let imagesHtml = session.images.map(img => 
+                `<img src="${img.base64}" style="width: 180px; height: 140px; object-fit: cover; margin: 5px; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05); page-break-inside: avoid;">`
+            ).join('');
+
+            printDiv.innerHTML = `
+                <div style="font-family: Arial, sans-serif; color: #0f172a; padding: 25px; background-color: #ffffff;">
+                    <style>p, li, h1, h2, h3, div { page-break-inside: avoid !important; }</style>
+                    <div style="border-bottom: 3px solid #4f46e5; padding-bottom: 15px; margin-bottom: 25px; page-break-inside: avoid;">
+                        <h1 style="color: #4f46e5; margin: 0; font-size: 26px;">Diagnostic Vision Report</h1>
+                        <p style="color: #64748b; margin-top: 8px; font-size: 14px;">Session: <strong>${session.title}</strong> | Date: ${new Date().toLocaleDateString()}</p>
+                    </div>
+                    <div style="page-break-inside: avoid;">
+                        <h3 style="color: #0f172a; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">1. Reference Images</h3>
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 30px;">${imagesHtml}</div>
+                    </div>
+                    <div style="page-break-inside: avoid;">
+                        <h3 style="color: #0f172a; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">2. Executive Summary</h3>
+                        <div style="background: #f8fafc; padding: 15px 20px; border-radius: 8px; border-left: 4px solid #4f46e5; margin-bottom: 30px; line-height: 1.6; font-size: 14px; color: #334155;">
+                            ${marked.parse(aiSummary)}
+                        </div>
+                    </div>
+                    <div style="page-break-inside: avoid;">
+                        <h3 style="color: #0f172a; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">3. Comprehensive Diagnostics</h3>
+                        <div style="line-height: 1.6; color: #334155; font-size: 14px;">
+                            ${marked.parse(session.combinedCaption)}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const opt = {
+                margin:       15,
+                filename:     `Vision_Report_${session.title.replace(/\s+/g, '_')}.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] } 
+            };
+
+            await html2pdf().set(opt).from(printDiv).save();
+
+        } catch (error) {
+            alert('Error generating PDF. Ensure your backend is running.');
+        } finally {
+            DOM.exportPdfBtn.disabled = false;
+            DOM.exportPdfBtn.textContent = "📄 PDF";
+        }
+    };
+</script>
+</body>
+</html>
